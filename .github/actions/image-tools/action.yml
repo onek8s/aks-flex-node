@@ -14,3 +14,6 @@ runs:
         sudo apt-get update -q
         sudo apt-get install -y -q --no-install-recommends \
           libguestfs-tools qemu-utils qemu-system-x86 ovmf genisoimage zip
+        # The runner's AppArmor stops passt, libguestfs's network for virt-customize, when it runs
+        # as root ("passt exited with status 1"); without passt libguestfs uses QEMU's user network.
+        sudo apt-get remove -y -q passt

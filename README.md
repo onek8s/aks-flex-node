@@ -47,9 +47,13 @@ Microsoft Learn's [prepare the cluster](https://learn.microsoft.com/en-us/azure/
 
 1. Register `Microsoft.ContainerService/AKSFlexNodePreview` and `PutMachinePreview`; `aks-preview`
    22.0.0b8 or later; an AKS release `v20260904` or later in the cluster's region.
-2. A cluster **without a network plugin** (`az aks create ... --network-plugin none`) and
-   [Unbounded-Net](https://github.com/Azure/unbounded) for pod networking on both sides: the AKS
-   CNIs do not run on flex nodes in the preview.
+2. Pod networking for the flex nodes: the AKS-managed CNIs (Azure CNI, Cilium) do not run on them.
+   A flex pool can join an existing cluster, but its nodes stay `NotReady` until a CNI of their own
+   writes their CNI configuration, and the managed CNI's pod network, identity and network policies
+   do not reach them. Microsoft's documented path is a cluster **without a network plugin**
+   (`--network-plugin none`) with [Unbounded-Net](https://github.com/Azure/unbounded) on both sides
+   ([networking concepts](https://learn.microsoft.com/en-us/azure/aks/flex-nodes-networking-concepts)).
+   A cluster with a flex pool cannot be stopped (`az aks stop`).
 3. A flex pool: `az aks nodepool add ... --vm-set-type FlexNodes --mode User`.
 4. Private layer 3 routing both ways between the AKS node network and the flex nodes' network (VPN,
    ExpressRoute, peering), with node, pod and service ranges that do not overlap; the API server
@@ -189,6 +193,6 @@ disk, and the Hyper-V drivers and daemons are checked in it.
 ## Limits
 
 - amd64 only for now (Flex Nodes also takes arm64).
-- Not yet joined to a cluster from this repository: the OneK8s cells run Azure CNI Pod Subnet with
-  Cilium, and a flex pool needs a cluster without a network plugin and Unbounded-Net.
+- Not joined to a OneK8s cell: the cells run Azure CNI Pod Subnet with Cilium, which does not
+  extend to flex nodes, and cannot be stopped while a flex pool exists. Test in a separate cluster.
 - No offline bootstrap: the worker's root file system and components are downloaded at the join.

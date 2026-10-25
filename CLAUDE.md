@@ -23,6 +23,8 @@ keep it current.
   not locally.
 - **Releases** are tags `vMAJOR.MINOR.PATCH` of this repo (`release.yml`), so aks-terraform's Design tags workflow
   leaves this repo out, as azure-lab-fw.
-- **Not in the design**: no requirement of the design names nodes outside Azure, and a flex pool needs a cluster
-  without a network plugin (Unbounded-Net) while the cells run Azure CNI Pod Subnet with Cilium. Adding flex nodes to
+- **Not in the design**: no requirement of the design names nodes outside Azure, and the cells' Azure CNI Pod
+  Subnet with Cilium does not extend to flex nodes (a flex pool can join an existing cluster, but needs its own
+  CNI; Microsoft's path is `--network-plugin none` + Unbounded-Net) and a cluster with a flex pool cannot be
+  stopped. The user tests the image in a separate cluster by hand. Adding flex nodes to
   the design starts with a requirement a human adds to onek8s.github.io `requirements/0.2`.

@@ -105,7 +105,11 @@ s.connect(sys.argv[1])
 s.sendall(b'{"execute":"guest-ping"}\n')
 sys.exit(0 if json.loads(s.makefile().readline()) == {"return": {}} else 1)
 EOF
-check "Hyper-V daemons only on Hyper-V" on 'systemctl cat hv-kvp-daemon.service | grep -q "^ConditionVirtualization=microsoft"'
+check "Hyper-V daemons only on Hyper-V" on '
+  for d in kvp vss fcopy; do
+    ! systemctl is-enabled -q hv-$d-daemon.service && grep -q "hv-$d-daemon.service" /usr/lib/udev/rules.d/60-hv-$d-daemon.rules ||
+      { echo hv-$d-daemon; exit 1; }
+  done; test "$(systemctl show -p ActiveState --value hv-kvp-daemon.service)" = inactive'
 check "Hyper-V and virtio drivers in the initramfs" on '
   k=$(uname -r); l=$(lsinitramfs /boot/initrd.img-$k)
   for m in hv_vmbus hv_storvsc hv_netvsc hv_utils virtio_blk virtio_scsi virtio_net; do

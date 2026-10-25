@@ -28,8 +28,8 @@ apt-get -y full-upgrade
 # - what bootstrap.sh and the agent use on the host: bash, curl, tar, jq, nftables,
 #   systemd-container (systemd-nspawn, machinectl), util-linux (flock), iptables;
 # - KVM: qemu-guest-agent, which starts only when the VM has its virtio channel;
-# - Hyper-V: hv_kvp_daemon, hv_vss_daemon, hv_fcopy_daemon (linux-cloud-tools), which start only on
-#   Hyper-V (ConditionVirtualization=microsoft); the drivers are in the kernel's modules;
+# - Hyper-V: hv_kvp_daemon, hv_vss_daemon, hv_fcopy_daemon (linux-cloud-tools), started by udev
+#   when Hyper-V's vmbus device appears (below); the drivers are in the kernel's modules;
 # - Azure Arc: azcmagent, installed and not connected (a host connects at its first boot).
 # azcmagent's guest configuration scripts tell systemd from upstart by /proc/1/comm, here the
 # appliance's init: they read systemd while the packages install.
@@ -42,6 +42,9 @@ apt-get install -y --no-install-recommends \
 umount /proc/1/comm
 rm -f /tmp/pid1-comm
 apt-mark hold azcmagent
+# The package also enables the Hyper-V daemons in multi-user.target, where each waits 90 s for its
+# vmbus device on KVM; its udev rules start them on Hyper-V, so only those stay.
+systemctl disable hv-kvp-daemon.service hv-vss-daemon.service hv-fcopy-daemon.service
 # Not a node's: snapd and its seeded snaps.
 apt-get -y purge --auto-remove snapd
 apt-get -y autoremove --purge
@@ -66,5 +69,8 @@ systemctl enable onek8s-flex-node-seed.service onek8s-flex-node-join.service
 # Every node gets its own identity at its first boot: machine ID, SSH host keys, cloud-init instance.
 apt-get clean
 rm -rf /var/lib/apt/lists/* /etc/ssh/ssh_host_*
-cloud-init clean --logs --seed --machine-id
-rm -f /var/lib/dbus/machine-id
+cloud-init clean --logs --seed
+# An empty machine ID, as Ubuntu's cloud image ships it: systemd writes a new one at the first boot.
+# (cloud-init's --machine-id deletes the file outside systemd, as here: then the first boot has no
+# machine ID on its read-only root and networkd's DHCP client cannot start.)
+truncate -s 0 /etc/machine-id

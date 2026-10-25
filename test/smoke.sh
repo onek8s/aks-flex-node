@@ -64,12 +64,24 @@ pid=$!
 
 ssh_opts=(-q -i "$work/key" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5)
 on() { ssh "${ssh_opts[@]}" ubuntu@127.0.0.1 "$@"; }
-for _ in $(seq 180); do
+# Runs a command through the QEMU guest agent, which needs no network: the diagnosis when SSH fails.
+guest() { python3 "$root/test/qga-exec.py" "$work/qga.sock" "$1"; }
+diagnose() {
+  log "serial console:"
+  cat "$work/serial.log" >&2
+  log "from the guest agent:"
+  guest 'ip -br addr; ip route; networkctl; systemctl --failed --no-pager
+    systemctl status --no-pager ssh.socket ssh.service; cat /etc/netplan/*.yaml
+    journalctl -b --no-pager -u systemd-networkd -u systemd-networkd-wait-online -u ssh -u onek8s-flex-node-join | tail -80' >&2 ||
+    log "the guest agent did not answer"
+}
+
+for _ in $(seq 120); do
   on true 2>/dev/null && break
-  kill -0 "$pid" || { log "QEMU exited"; tail -50 "$work/serial.log"; exit 1; }
+  kill -0 "$pid" || { log "QEMU exited"; cat "$work/serial.log" >&2; exit 1; }
   sleep 5
 done
-on true || { log "no SSH"; tail -50 "$work/serial.log"; exit 1; }
+on true || { log "no SSH"; diagnose; exit 1; }
 on 'sudo cloud-init status --wait' >/dev/null || true
 # The join's unit retries nothing here; wait for it to settle.
 for _ in $(seq 60); do

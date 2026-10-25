@@ -1,0 +1,15 @@
+[Unit]
+Description=OneK8s flex node: settings from the seed volume
+Documentation=https://github.com/onek8s/aks-flex-node
+After=local-fs.target
+Before=onek8s-flex-node-join.service
+# A joined node never reads its seed again (a reset node is reimaged, see README.md).
+ConditionPathExists=!/var/lib/onek8s/flex-node/joined
+ConditionPathExists=!/etc/systemd/system/aks-flex-node-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/onek8s/flex-node-seed
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+name: image tools
+description: KVM for the runner's user, libguestfs, QEMU, OVMF and an ISO tool
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        # GitHub's Linux runners have KVM, readable by root only.
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+          sudo tee /etc/udev/rules.d/99-kvm.rules >/dev/null
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+        sudo apt-get update -q
+        sudo apt-get install -y -q --no-install-recommends \
+          libguestfs-tools isc-dhcp-client qemu-utils qemu-system-x86 ovmf genisoimage zip
+        # libguestfs's appliance takes its network address with the host's dhclient (isc-dhcp-client);
+        # without it virt-customize has no network. The runner's AppArmor stops passt, libguestfs's network for virt-customize, when it runs
+        # as root ("passt exited with status 1"); without passt libguestfs uses QEMU's user network.
+        sudo apt-get remove -y -q passt

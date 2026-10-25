@@ -1,0 +1,89 @@
+#!/bin/bash
+# Joins this host to its AKS flex node pool at its first boot with the agent staged in the image
+# (/opt/onek8s/aks-flex-node). Its settings (/etc/onek8s/flex-node/bootstrap.env, the unit's
+# environment) are bootstrap.sh's AKS_FLEX_NODE_* variables, plus ONEK8S_ARC_* to connect the host to
+# Azure Arc first; see README.md.
+set -euo pipefail
+umask 077
+
+readonly stage=/opt/onek8s/aks-flex-node
+# A setting that cannot work: the unit does not retry (RestartPreventExitStatus).
+readonly EX_CONFIG=78
+
+log() { printf 'flex-node-join: %s\n' "$*" >&2; }
+config_error() {
+  log "error: $*"
+  exit "$EX_CONFIG"
+}
+
+# shellcheck source=/dev/null
+. "$stage/release.env"
+
+# The agent names the node after the hostname, in lower case.
+node="$(hostname)"
+node="${node,,}"
+case "$node" in
+  "" | ubuntu | localhost | localhost.localdomain)
+    config_error "hostname '$node' is the image's default: give every node its own (meta-data local-hostname)" ;;
+esac
+[[ "$node" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$ ]] ||
+  config_error "hostname '$node' is not a DNS subdomain name"
+
+case "${AKS_FLEX_NODE_AUTH:-}" in
+  service-principal | arc | msi) ;;
+  *) config_error "AKS_FLEX_NODE_AUTH must be service-principal, arc or msi" ;;
+esac
+[[ -n "${AKS_FLEX_NODE_CLUSTER_RESOURCE_ID:-}" && -n "${AKS_FLEX_NODE_AGENT_POOL_NAME:-}" ]] ||
+  config_error "AKS_FLEX_NODE_CLUSTER_RESOURCE_ID and AKS_FLEX_NODE_AGENT_POOL_NAME must be set"
+
+arc_connected() { azcmagent show 2>/dev/null | grep -Eq '^Agent Status +: +Connected'; }
+
+# Connects the host to Azure Arc with an onboarding service principal's certificate, which is deleted
+# once connected. The Arc machine's identity then needs the Flex Node Agent Role on the pool: until
+# it has it, fetching the bootstrap data fails and the unit retries.
+arc_connect() {
+  local var
+  for var in TENANT_ID SUBSCRIPTION_ID RESOURCE_GROUP LOCATION SP_CLIENT_ID SP_CERTIFICATE_FILE; do
+    var="ONEK8S_ARC_$var"
+    [[ -n "${!var:-}" ]] || config_error "the host is not connected to Azure Arc and $var is not set"
+  done
+  [[ -s "$ONEK8S_ARC_SP_CERTIFICATE_FILE" ]] || config_error "$ONEK8S_ARC_SP_CERTIFICATE_FILE is missing"
+  log "connecting to Azure Arc as $node in $ONEK8S_ARC_RESOURCE_GROUP"
+  azcmagent connect \
+    --service-principal-id "$ONEK8S_ARC_SP_CLIENT_ID" \
+    --service-principal-cert "$ONEK8S_ARC_SP_CERTIFICATE_FILE" \
+    --tenant-id "$ONEK8S_ARC_TENANT_ID" \
+    --subscription-id "$ONEK8S_ARC_SUBSCRIPTION_ID" \
+    --resource-group "$ONEK8S_ARC_RESOURCE_GROUP" \
+    --location "$ONEK8S_ARC_LOCATION" \
+    --resource-name "$node" \
+    ${ONEK8S_ARC_TAGS:+--tags "$ONEK8S_ARC_TAGS"}
+  rm -f "$ONEK8S_ARC_SP_CERTIFICATE_FILE"
+  log "connected: give the Arc machine's identity the Azure Kubernetes Service Flex Node Agent Role on the pool"
+}
+
+if [[ "$AKS_FLEX_NODE_AUTH" == arc ]]; then
+  arc_connected || arc_connect
+  for _ in $(seq 30); do
+    systemctl is-active --quiet himdsd && break
+    sleep 2
+  done
+fi
+
+# The staged agent, unless the settings name another archive.
+if [[ -z "${AKS_FLEX_NODE_AGENT_URL:-}" ]]; then
+  export AKS_FLEX_NODE_AGENT_URL="file://$stage/aks-flex-node-linux-amd64.tar.gz"
+  export AKS_FLEX_NODE_AGENT_VERSION="$AKS_FLEX_NODE_VERSION"
+  export AKS_FLEX_NODE_AGENT_SHA256="$AKS_FLEX_NODE_ARCHIVE_SHA256"
+fi
+# The pool's bootstrap token lives an hour: always a fresh one.
+export AKS_FLEX_NODE_FETCH_BOOTSTRAP_DATA=true
+
+log "joining pool $AKS_FLEX_NODE_AGENT_POOL_NAME of ${AKS_FLEX_NODE_CLUSTER_RESOURCE_ID##*/} as $node (image $IMAGE_VERSION, agent $AKS_FLEX_NODE_VERSION, auth $AKS_FLEX_NODE_AUTH)"
+bash "$stage/bootstrap.sh"
+
+# Joined: the agent has its config (/etc/aks-flex-node), the settings are no longer needed.
+install -d -m 0755 /var/lib/onek8s /var/lib/onek8s/flex-node
+date -u +%FT%TZ >/var/lib/onek8s/flex-node/joined
+rm -rf /etc/onek8s/flex-node
+log "joined as $node"

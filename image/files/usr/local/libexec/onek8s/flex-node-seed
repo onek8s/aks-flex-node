@@ -1,0 +1,35 @@
+#!/bin/bash
+# Copies a node's flex node settings from its seed volume (the NoCloud volume labelled cidata or
+# CIDATA, beside user-data and meta-data) before the join, so that neither the settings nor the
+# credentials pass through cloud-init's caches:
+#   aks-flex-node/bootstrap.env  -> /etc/onek8s/flex-node/bootstrap.env
+#   aks-flex-node/<other file>   -> /etc/aks-flex-node/credentials/<other file> (mode 0600)
+# A seed without aks-flex-node/ leaves what is on the host (cloud-init write_files, say).
+set -euo pipefail
+umask 077
+
+dev="$(blkid -l -o device -t LABEL=cidata || blkid -l -o device -t LABEL=CIDATA || true)"
+if [[ -z "$dev" ]]; then
+  echo "flex-node-seed: no seed volume"
+  exit 0
+fi
+mnt="$(mktemp -d)"
+trap 'umount "$mnt" 2>/dev/null || true; rmdir "$mnt"' EXIT
+mount -o ro "$dev" "$mnt"
+
+src="$mnt/aks-flex-node"
+if [[ ! -f "$src/bootstrap.env" ]]; then
+  echo "flex-node-seed: $dev has no aks-flex-node/bootstrap.env"
+  exit 0
+fi
+install -d -m 0700 /etc/onek8s /etc/onek8s/flex-node
+# Without the carriage returns of a file written on Windows, which systemd would keep in the values.
+tr -d '\r' <"$src/bootstrap.env" >/etc/onek8s/flex-node/bootstrap.env
+for file in "$src"/*; do
+  name="$(basename "$file")"
+  [[ -f "$file" && "$name" != bootstrap.env ]] || continue
+  install -d -m 0700 /etc/aks-flex-node /etc/aks-flex-node/credentials
+  install -m 0600 "$file" "/etc/aks-flex-node/credentials/$name"
+  echo "flex-node-seed: credential $name"
+done
+echo "flex-node-seed: settings from $dev"

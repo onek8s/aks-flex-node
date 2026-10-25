@@ -1,0 +1,59 @@
+name: release
+# Builds the image, boots it (test/smoke.sh) and publishes a GitHub Release with
+#   aks-flex-node-<tag>-amd64.qcow2      KVM
+#   aks-flex-node-<tag>-amd64.vhdx.zip   Hyper-V
+#   aks-flex-node-<tag>-amd64.packages   the image's packages and versions
+#   SHA256SUMS
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0); created on the selected ref if it does not exist"
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: validate tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$TAG' is not of the form vMAJOR.MINOR.PATCH[-pre]"
+            exit 1
+          fi
+      - uses: ./.github/actions/image-tools
+      - run: sudo image/build.sh "$TAG"
+      - run: test/smoke.sh "dist/aks-flex-node-${TAG}-amd64.qcow2"
+      - name: package
+        run: |
+          set -euo pipefail
+          cd dist
+          sudo chown -R "$USER" .
+          zip -q -1 "aks-flex-node-${TAG}-amd64.vhdx.zip" "aks-flex-node-${TAG}-amd64.vhdx"
+          rm "aks-flex-node-${TAG}-amd64.vhdx"
+          sha256sum aks-flex-node-* >SHA256SUMS
+          cat SHA256SUMS
+      - name: create GitHub release
+        run: |
+          set -euo pipefail
+          . versions.env
+          notes="Ubuntu 24.04 (${UBUNTU_SERIAL}), AKS Flex Node agent ${AKS_FLEX_NODE_VERSION}, azcmagent ${AZCMAGENT_VERSION}. See README.md for Hyper-V and KVM."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --notes "$notes"
+          fi

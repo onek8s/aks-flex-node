@@ -1,0 +1,29 @@
+# The first-boot join of a OneK8s flex node, after the upstream Ignition unit
+# (Azure/AKSFlexNode scripts/aks-flex-node-bootstrap.bu): retried with a growing delay, except for a
+# setting that cannot work (exit 78).
+[Unit]
+Description=OneK8s flex node: join the AKS flex node pool
+Documentation=https://github.com/onek8s/aks-flex-node
+Wants=network-online.target
+# cloud-config.service: cloud-init has set the hostname, which names the node.
+After=network-online.target nss-lookup.target cloud-config.service onek8s-flex-node-seed.service himdsd.service
+ConditionPathExists=/etc/onek8s/flex-node/bootstrap.env
+ConditionPathExists=!/var/lib/onek8s/flex-node/joined
+ConditionPathExists=!/etc/systemd/system/aks-flex-node-agent.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Fetching the bootstrap data, the worker's root file system and components, and joining.
+TimeoutStartSec=30min
+Restart=on-failure
+RestartSec=10s
+RestartSteps=10
+RestartMaxDelaySec=300
+RestartPreventExitStatus=78
+EnvironmentFile=/etc/onek8s/flex-node/bootstrap.env
+ExecStart=/usr/local/libexec/onek8s/flex-node-join
+
+[Install]
+WantedBy=multi-user.target

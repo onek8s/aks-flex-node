@@ -1,0 +1,32 @@
+name: ci
+# Lints the scripts, builds the image and boots it (test/smoke.sh) on every pull request.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: make lint
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/image-tools
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: inputs-${{ hashFiles('versions.env') }}
+      - run: sudo image/build.sh "ci-${GITHUB_SHA::7}"
+      - run: test/smoke.sh dist/aks-flex-node-ci-${GITHUB_SHA::7}-amd64.qcow2

@@ -1,0 +1,15 @@
+# Optional network-config of a seed (make-seed.sh -N, New-FlexNodeVM.ps1 -NetworkConfig): netplan v2.
+# Without it the first NIC takes DHCP. The match covers both hypervisors' names (eth0 on Hyper-V,
+# enp1s0 on KVM): one NIC per node.
+network:
+  version: 2
+  ethernets:
+    nic0:
+      match:
+        name: "e*"
+      addresses: [10.92.0.10/24]
+      routes:
+        - to: default
+          via: 10.92.0.1
+      nameservers:
+        addresses: [10.92.0.1]

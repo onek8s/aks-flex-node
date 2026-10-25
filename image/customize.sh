@@ -31,7 +31,9 @@ apt-get -y full-upgrade
 # - Hyper-V: hv_kvp_daemon, hv_vss_daemon, hv_fcopy_daemon (linux-cloud-tools), which start only on
 #   Hyper-V (ConditionVirtualization=microsoft); the drivers are in the kernel's modules;
 # - Azure Arc: azcmagent, installed and not connected (a host connects at its first boot).
-apt-get install -y --no-install-recommends \
+# azcmagent's guest configuration scripts tell systemd from upstart by PID 1, which is not systemd
+# here; they take the answer from SYSTEM_SERVICE_CONTROLLER when it is set.
+SYSTEM_SERVICE_CONTROLLER=systemd apt-get install -y --no-install-recommends \
   bash ca-certificates curl tar jq nftables systemd-container util-linux iptables \
   qemu-guest-agent linux-cloud-tools-virtual \
   "azcmagent=${AZCMAGENT_VERSION}"

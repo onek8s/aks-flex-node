@@ -170,8 +170,8 @@ az aks machine list -g <rg> --cluster-name <cluster> --nodepool-name <pool> -o t
 ## Build
 
 ```bash
-sudo apt-get install libguestfs-tools qemu-utils qemu-system-x86 ovmf genisoimage
-make image     # sudo image/build.sh -> dist/
+sudo apt-get install libguestfs-tools isc-dhcp-client qemu-utils qemu-system-x86 ovmf genisoimage
+make image     # sudo image/build.sh -> dist/ (Ubuntu 24.04: virt-customize needs isc-dhcp-client for its network)
 make smoke     # boots the qcow2 under QEMU with Secure Boot and checks it
 make lint      # shellcheck, PowerShell parse
 ```

@@ -7,7 +7,7 @@
 # One disk is customized once and converted twice, so both formats hold the same bytes.
 #
 # Needs root (libguestfs reads the host kernel), qemu-img, libguestfs-tools (virt-resize,
-# virt-customize, virt-cat, virt-sparsify) and curl. KVM speeds libguestfs up but is not required.
+# virt-customize, virt-cat, virt-sparsify), isc-dhcp-client (the appliance's network) and curl. KVM speeds libguestfs up but is not required.
 #
 # Usage: sudo image/build.sh [version]   (default: git describe)
 set -euo pipefail

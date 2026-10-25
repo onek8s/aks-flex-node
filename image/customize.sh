@@ -10,13 +10,6 @@ stage=/tmp/stage
 # shellcheck disable=SC1091
 . "$stage/image.env"
 
-# The image's resolv.conf points at systemd-resolved's stub, which does not run here: QEMU's user
-# network's DNS for the build, the image's own link back at the end.
-resolv="$(readlink /etc/resolv.conf || true)"
-rm -f /etc/resolv.conf
-echo 'nameserver 10.0.2.3' >/etc/resolv.conf
-trap 'rm -f /etc/resolv.conf; [[ -z "$resolv" ]] || ln -s "$resolv" /etc/resolv.conf' EXIT
-
 # Units, cloud-init settings, the join script, initramfs modules.
 tar -xf "$stage/files.tar" -C / --no-same-owner --no-overwrite-dir
 
